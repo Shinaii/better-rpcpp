@@ -1,4 +1,11 @@
-#include "rpcpp.hpp"
+#include "brpcpp.hpp"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <signal.h>
+
+#define PID_FILE "/tmp/brcp.pid"
 
 void *updateRPC(void *ptr)
 {
@@ -65,32 +72,145 @@ void *updateUsage(void *ptr)
     }
 }
 
+void writePidFile()
+{
+    std::ofstream pidFile(PID_FILE);
+    if (pidFile.is_open())
+    {
+        pidFile << getpid();
+        pidFile.close();
+    }
+    else
+    {
+        std::cerr << "Failed to write PID file." << std::endl;
+        exit(1);
+    }
+}
+
+bool isProcessRunning()
+{
+    std::ifstream pidFile(PID_FILE);
+    if (pidFile.is_open())
+    {
+        pid_t pid;
+        pidFile >> pid;
+        pidFile.close();
+
+        if (kill(pid, 0) == 0)
+        {
+            return true;
+        }
+        else
+        {
+            remove(PID_FILE);
+        }
+    }
+    return false;
+}
+
+void killRunningProcess()
+{
+    std::ifstream pidFile(PID_FILE);
+    if (pidFile.is_open())
+    {
+        pid_t pid;
+        pidFile >> pid;
+        pidFile.close();
+
+        if (kill(pid, SIGTERM) == 0)
+        {
+            std::cout << "Killed running brcp process (PID: " << pid << ")." << std::endl;
+            remove(PID_FILE);
+        }
+        else
+        {
+            std::cerr << "Failed to kill process (PID: " << pid << ")." << std::endl;
+        }
+    }
+    else
+    {
+        std::cout << "No running brcp process found." << std::endl;
+    }
+}
+
+void daemonize()
+{
+    pid_t pid = fork();
+
+    if (pid < 0)
+    {
+        std::cerr << "Failed to fork process." << std::endl;
+        exit(1);
+    }
+
+    if (pid > 0)
+    {
+        // Parent process exits
+        exit(0);
+    }
+
+    // Child process continues
+    if (setsid() < 0)
+    {
+        std::cerr << "Failed to create new session." << std::endl;
+        exit(1);
+    }
+
+    // Redirect standard file descriptors to /dev/null
+    int devNull = open("/dev/null", O_RDWR);
+    dup2(devNull, STDIN_FILENO);
+    dup2(devNull, STDOUT_FILENO);
+    dup2(devNull, STDERR_FILENO);
+    close(devNull);
+}
+
 int main(int argc, char **argv)
 {
     parseConfigs();
     parseArgs(argc, argv);
 
+    if (argc > 1)
+    {
+        std::string arg = argv[1];
+        if (arg == "-k" || arg == "--kill")
+        {
+            killRunningProcess();
+            return 0;
+        }
+    }
+    else
+    {
+        if (isProcessRunning())
+        {
+            std::cerr << "An instance of brcp is already running. Use `brcp -k` to kill it before starting a new one." << std::endl;
+            return 1;
+        }
+
+        daemonize();
+        writePidFile();
+    }
+
     if (config.printHelp)
     {
-        cout << helpMsg << endl;
+        std::cout << helpMsg << std::endl;
         exit(0);
     }
     if (config.printVersion)
     {
-        cout << "RPC++ version " << VERSION << endl;
+        std::cout << "bRPC++ version " << VERSION << std::endl;
         exit(0);
     }
 
     int waitedTime = 0;
     while (!config.ignoreDiscord && !processRunning("vesktop") && !processRunning("discord"))
     {
-        log("Checking processes: discord=" + to_string(processRunning("discord")) +
-            ", vesktop=" + to_string(processRunning("vesktop")) +
-            ", ignoreDiscord=" + to_string(config.ignoreDiscord), LogType::DEBUG);
-    
-        if (waitedTime > 60)
+        log("Checking processes: discord=" + std::to_string(processRunning("discord")) +
+            ", vesktop=" + std::to_string(processRunning("vesktop")) +
+            ", ignoreDiscord=" + std::to_string(config.ignoreDiscord), LogType::DEBUG);
+
+        if (waitedTime > 20)
         {
-            log(string("Neither Discord nor Vesktop is running. Maybe ignore Discord check with --ignore-discord or -f?", LogType::INFO);
+            log(std::string("Neither Discord nor Vesktop is running. Maybe ignore Discord check with --ignore-discord or -f?"), LogType::INFO);
         }
         log("Waiting for Discord or Vesktop...", LogType::INFO);
         waitedTime += 5;
@@ -101,7 +221,7 @@ int main(int argc, char **argv)
 
     if (!disp)
     {
-        cout << "Can't open display" << endl;
+        std::cout << "Can't open display" << std::endl;
         return -1;
     }
 
@@ -124,8 +244,7 @@ int main(int argc, char **argv)
     state.core.reset(core);
     if (!state.core)
     {
-        cout << "Failed to instantiate discord core! (err " << static_cast<int>(result)
-             << ")\n";
+        std::cout << "Failed to instantiate discord core! (err " << static_cast<int>(result) << ")\n";
         exit(-1);
     }
 
@@ -133,12 +252,12 @@ int main(int argc, char **argv)
     {
         state.core->SetLogHook(
             discord::LogLevel::Debug, [](discord::LogLevel level, const char *message)
-            { cerr << "Log(" << static_cast<uint32_t>(level) << "): " << message << "\n"; });
+            { std::cerr << "Log(" << static_cast<uint32_t>(level) << "): " << message << "\n"; });
     }
 
     pthread_create(&updateThread, 0, updateRPC, ((void *)&state));
     log("Threads started.", LogType::DEBUG);
-    log("Xorg version " + to_string(XProtocolVersion(disp)), LogType::DEBUG); // this is kinda dumb to do since it shouldn't be anything else other than 11, but whatever
+    log("Xorg version " + std::to_string(XProtocolVersion(disp)), LogType::DEBUG); // this is kinda dumb to do since it shouldn't be anything else other than 11, but whatever
     log("Connected to Discord.", LogType::INFO);
 
     signal(SIGINT, [](int)
@@ -148,15 +267,17 @@ int main(int argc, char **argv)
     {
         state.core->RunCallbacks();
 
-        this_thread::sleep_for(chrono::milliseconds(16));
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
     } while (!interrupted);
 
-    cout << "Exiting..." << endl;
+    std::cout << "Exiting..." << std::endl;
 
     XCloseDisplay(disp);
 
     pthread_kill(updateThread, 9);
     pthread_kill(usageThread, 9);
+
+    remove(PID_FILE);
 
     return 0;
 }

@@ -39,8 +39,9 @@ map<string, string> distros_lsb = {{"Arch|Artix", "archlinux"}, {"LinuxMint", "l
 map<string, string> distros_os = {{"Arch Linux", "archlinux"}, {"Linux Mint", "lmint"}, {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"}, {"Manjaro Linux", "manjaro"}};                                                                                                                                                                                     // same but in /etc/os-release (fallback)
 string helpMsg = string(
                      "Usage:\n") +
-                 " rpcpp [options]\n\n" +
+                 " brcp [options]\n\n" +
                  "Options:\n" +
+                 " -k, --kill             kill the currently running instance\n" +
                  " -f, --ignore-discord   don't check for discord on start\n" +
                  " --debug                print debug messages\n" +
                  " --usage-sleep=5000     sleep time in milliseconds between updating cpu and ram usages\n" +
@@ -253,7 +254,7 @@ double getCPU()
 
 bool processRunning(string name, bool ignoreCase = true)
 {
-    string strReg = "\\/" + name + " ?";
+    string strReg = name; // Match the name anywhere
     regex nameRegex(ignoreCase ? regex(strReg, regex::icase) : regex(strReg));
     log("Checking for process: " + name, LogType::DEBUG);
 
@@ -261,19 +262,16 @@ bool processRunning(string name, bool ignoreCase = true)
     {
         if (fs::is_directory(entry.path()))
         {
-            string path = entry.path();
-            if (regex_search(path, processRegex))
+            ifstream s(entry.path() / "cmdline");
+            if (s.is_open())
             {
-                ifstream s(entry.path() / "cmdline");
-                if (s.is_open())
+                string line((istreambuf_iterator<char>(s)), istreambuf_iterator<char>());
+                replace(line.begin(), line.end(), '\0', ' '); // Replace null characters with spaces
+                log("Cmdline content for PID " + entry.path().filename().string() + ": " + line, LogType::DEBUG); // Log the cmdline content
+                if (regex_search(line, nameRegex))
                 {
-                    string line;
-                    getline(s, line);
-                    if (regex_search(line, nameRegex))
-                    {
-                        log("Found process: " + name + " (cmdline: " + line + ")", LogType::DEBUG);
-                        return true;
-                    }
+                    log("Found process: " + name + " (cmdline: " + line + ")", LogType::DEBUG);
+                    return true;
                 }
             }
         }
@@ -359,22 +357,22 @@ void parseConfig(string configFile, Config *config)
 
 /**
  * @brief Parse default configs
- * /etc/rpcpp/config < ~/.config/rpcpp/config
+ * /etc/brcp/config < ~/.config/brcp/config
  */
 void parseConfigs()
 {
     char *home = getenv("HOME");
     if (!home)
     {
-        parseConfig("/etc/rpcpp/config", &config);
+        parseConfig("/etc/brcp/config", &config);
         return;
     }
 
-    string configFile = string(home) + "/.config/rpcpp/config";
+    string configFile = string(home) + "/.config/brcp/config";
     parseConfig(configFile, &config);
     if (ifstream(configFile).fail())
     {
-        parseConfig("/etc/rpcpp/config", &config);
+        parseConfig("/etc/brcp/config", &config);
     }
 }
 
