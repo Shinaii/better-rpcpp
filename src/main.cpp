@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <signal.h>
 
-#define PID_FILE "/tmp/brcp.pid"
+#define PID_FILE "/tmp/brpc.pid"
 
 void *updateRPC(void *ptr)
 {
@@ -119,7 +119,7 @@ void killRunningProcess()
 
         if (kill(pid, SIGTERM) == 0)
         {
-            std::cout << "Killed running brcp process (PID: " << pid << ")." << std::endl;
+            std::cout << "Killed running brpc process (PID: " << pid << ")." << std::endl;
             remove(PID_FILE);
         }
         else
@@ -129,7 +129,7 @@ void killRunningProcess()
     }
     else
     {
-        std::cout << "No running brcp process found." << std::endl;
+        std::cout << "No running brpc process found." << std::endl;
     }
 }
 
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
     {
         if (isProcessRunning())
         {
-            std::cerr << "An instance of brcp is already running. Use `brcp -k` to kill it before starting a new one." << std::endl;
+            std::cerr << "An instance of brpc is already running. Use `brpc -k` to kill it before starting a new one." << std::endl;
             return 1;
         }
 

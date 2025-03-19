@@ -39,7 +39,7 @@ map<string, string> distros_lsb = {{"Arch|Artix", "archlinux"}, {"LinuxMint", "l
 map<string, string> distros_os = {{"Arch Linux", "archlinux"}, {"Linux Mint", "lmint"}, {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"}, {"Manjaro Linux", "manjaro"}};                                                                                                                                                                                     // same but in /etc/os-release (fallback)
 string helpMsg = string(
                      "Usage:\n") +
-                 " brcp [options]\n\n" +
+                 " brpc [options]\n\n" +
                  "Options:\n" +
                  " -k, --kill             kill the currently running instance\n" +
                  " -f, --ignore-discord   don't check for discord on start\n" +
@@ -357,22 +357,22 @@ void parseConfig(string configFile, Config *config)
 
 /**
  * @brief Parse default configs
- * /etc/brcp/config < ~/.config/brcp/config
+ * /etc/brpc/config < ~/.config/brpc/config
  */
 void parseConfigs()
 {
     char *home = getenv("HOME");
     if (!home)
     {
-        parseConfig("/etc/brcp/config", &config);
+        parseConfig("/etc/brpc/config", &config);
         return;
     }
 
-    string configFile = string(home) + "/.config/brcp/config";
+    string configFile = string(home) + "/.config/brpc/config";
     parseConfig(configFile, &config);
     if (ifstream(configFile).fail())
     {
-        parseConfig("/etc/brcp/config", &config);
+        parseConfig("/etc/brpc/config", &config);
     }
 }
 
@@ -453,7 +453,7 @@ WindowAsset getWindowAsset(string w)
 DistroAsset getDistroAsset(string d)
 {
     DistroAsset dist{};
-    dist.text = d + " / RPC++ " + VERSION;
+    dist.text = d + " / Better-RPC++ " + VERSION;
     dist.image = "tux";
 
     for (const auto &kv : distros_lsb_regex)
