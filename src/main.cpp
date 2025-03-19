@@ -82,13 +82,17 @@ int main(int argc, char **argv)
     }
 
     int waitedTime = 0;
-    while (!processRunning("discord") && !config.ignoreDiscord)
+    while (!config.ignoreDiscord && !processRunning("vesktop") && !processRunning("discord"))
     {
+        log("Checking processes: discord=" + to_string(processRunning("discord")) +
+            ", vesktop=" + to_string(processRunning("vesktop")) +
+            ", ignoreDiscord=" + to_string(config.ignoreDiscord), LogType::DEBUG);
+    
         if (waitedTime > 60)
         {
-            log(string("Discord is not running for ") + to_string(waitedTime) + " seconds. Maybe ignore Discord check with --ignore-discord or -f?", LogType::INFO);
+            log(string("Neither Discord nor Vesktop is running. Maybe ignore Discord check with --ignore-discord or -f?", LogType::INFO);
         }
-        log("Waiting for Discord...", LogType::INFO);
+        log("Waiting for Discord or Vesktop...", LogType::INFO);
         waitedTime += 5;
         sleep(5);
     }

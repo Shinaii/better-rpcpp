@@ -16,7 +16,7 @@
 #include <X11/Xutil.h>
 
 // variables
-#define VERSION "2.2.0"
+#define VERSION "2.2.1"
 
 namespace
 {
@@ -253,45 +253,32 @@ double getCPU()
 
 bool processRunning(string name, bool ignoreCase = true)
 {
-
     string strReg = "\\/" + name + " ?";
-    regex nameRegex;
-    smatch progmatcher;
+    regex nameRegex(ignoreCase ? regex(strReg, regex::icase) : regex(strReg));
+    log("Checking for process: " + name, LogType::DEBUG);
 
-    if (ignoreCase)
-        nameRegex = regex(strReg, regex::icase);
-
-    else
-        nameRegex = regex(strReg);
-
-    string procs;
-    smatch isProcessMatcher;
-
-    std::string path = "/proc";
-    for (const auto &entry : fs::directory_iterator(path))
+    for (const auto &entry : fs::directory_iterator("/proc"))
     {
         if (fs::is_directory(entry.path()))
         {
-            for (const auto &entry2 : fs::directory_iterator(entry.path()))
+            string path = entry.path();
+            if (regex_search(path, processRegex))
             {
-                string path = entry2.path();
-                if (regex_search(path, isProcessMatcher, processRegex))
+                ifstream s(entry.path() / "cmdline");
+                if (s.is_open())
                 {
-                    ifstream s;
-                    s.open(entry2.path());
                     string line;
-                    while (getline(s, line))
+                    getline(s, line);
+                    if (regex_search(line, nameRegex))
                     {
-                        if (regex_search(line, progmatcher, nameRegex))
-                        {
-                            return true;
-                        }
+                        log("Found process: " + name + " (cmdline: " + line + ")", LogType::DEBUG);
+                        return true;
                     }
                 }
             }
         }
     }
-
+    log("Process not found: " + name, LogType::DEBUG);
     return false;
 }
 
