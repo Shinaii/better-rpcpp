@@ -54,29 +54,40 @@ string wm_info(Display *disp)
     char wm_name[256];
 
     if (!get_property(disp, DefaultRootWindow(disp),
-                                              XA_WINDOW, "_NET_SUPPORTING_WM_CHECK",
-                                              (char *)sup_window, sizeof(sup_window)))
+                      XA_WINDOW, "_NET_SUPPORTING_WM_CHECK",
+                      (char *)sup_window, sizeof(sup_window)))
     {
         if (!get_property(disp, DefaultRootWindow(disp),
-                                                  XA_CARDINAL, "_WIN_SUPPORTING_WM_CHECK",
-                                              (char *)sup_window, sizeof(sup_window)))
+                          XA_CARDINAL, "_WIN_SUPPORTING_WM_CHECK",
+                          (char *)sup_window, sizeof(sup_window)))
         {
             cout << "could not get window manager\n";
+            return "";
         }
     }
 
     /* WM_NAME */
     if (!get_property(disp, *sup_window,
-                                 XInternAtom(disp, "UTF8_STRING", False), "_NET_WM_NAME",
-                                 wm_name, sizeof(wm_name)))
+                      XInternAtom(disp, "UTF8_STRING", False), "_NET_WM_NAME",
+                      wm_name, sizeof(wm_name)))
     {
         if (!get_property(disp, *sup_window,
-                                     XA_STRING, "_NET_WM_NAME",
-                                 wm_name, sizeof(wm_name)))
+                          XA_STRING, "_NET_WM_NAME",
+                          wm_name, sizeof(wm_name)))
         {
             cout << "could not get window manager name\n";
+            return "";
         }
     }
 
-    return wm_name;
+    string wm_name_str = wm_name;
+
+    // Check for hyprland smiley
+    size_t pos = wm_name_str.find(":D");
+    if (pos != string::npos)
+    {
+        wm_name_str.erase(pos, 2);
+    }
+
+    return wm_name_str;
 }

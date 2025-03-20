@@ -1,4 +1,5 @@
-#include "brpcpp.hpp"
+#include "header/brpcpp.hpp"
+#include "header/logging.hpp"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -16,7 +17,7 @@ void *updateRPC(void *ptr)
 
     log("Waiting for usages to load...", LogType::DEBUG);
 
-    // wait for usages to load
+    // Wait for usages to load
     while (cpu == -1 || mem == -1)
     {
         usleep(1000);
@@ -51,7 +52,17 @@ void *updateRPC(void *ptr)
             }
         }
 
-        setActivity(*state, string("CPU: " + cpupercent + "% | RAM: " + rampercent + "%"), "WM: " + wm, windowAsset.image, windowAsset.text, distroAsset.image, distroAsset.text, startTime, discord::ActivityType::Playing);
+        setActivity(
+            *state,
+            string("CPU: " + cpupercent + "% | RAM: " + rampercent + "%"),
+            "WM: " + wm,
+            windowAsset.image,
+            windowAsset.text,
+            distroAsset.image,
+            distroAsset.text,
+            startTime,
+            discord::ActivityType::Playing
+        );
     }
 }
 
@@ -124,7 +135,24 @@ void killRunningProcess()
         }
         else
         {
-            std::cerr << "Failed to kill process (PID: " << pid << ")." << std::endl;
+            std::cerr << "Failed to kill process (PID: " << pid << "). Error: " << strerror(errno) << std::endl;
+
+            // Additional debugging: Check if the process exists
+            if (kill(pid, 0) == -1)
+            {
+                if (errno == ESRCH)
+                {
+                    std::cerr << "Process does not exist (PID: " << pid << ")." << std::endl;
+                }
+                else if (errno == EPERM)
+                {
+                    std::cerr << "Permission denied to kill the process (PID: " << pid << ")." << std::endl;
+                }
+                else
+                {
+                    std::cerr << "Unexpected error while checking process (PID: " << pid << "): " << strerror(errno) << std::endl;
+                }
+            }
         }
     }
     else
@@ -195,6 +223,7 @@ int main(int argc, char **argv)
         std::cout << helpMsg << std::endl;
         exit(0);
     }
+
     if (config.printVersion)
     {
         std::cout << "bRPC++ version " << VERSION << std::endl;
@@ -204,14 +233,21 @@ int main(int argc, char **argv)
     int waitedTime = 0;
     while (!config.ignoreDiscord && !processRunning("vesktop") && !processRunning("discord"))
     {
-        log("Checking processes: discord=" + std::to_string(processRunning("discord")) +
+        log(
+            "Checking processes: discord=" + std::to_string(processRunning("discord")) +
             ", vesktop=" + std::to_string(processRunning("vesktop")) +
-            ", ignoreDiscord=" + std::to_string(config.ignoreDiscord), LogType::DEBUG);
+            ", ignoreDiscord=" + std::to_string(config.ignoreDiscord),
+            LogType::DEBUG
+        );
 
         if (waitedTime > 20)
         {
-            log(std::string("Neither Discord nor Vesktop is running. Maybe ignore Discord check with --ignore-discord or -f?"), LogType::INFO);
+            log(
+                std::string("Neither Discord nor Vesktop is running. Maybe ignore Discord check with --ignore-discord or -f?"),
+                LogType::INFO
+            );
         }
+
         log("Waiting for Discord or Vesktop...", LogType::INFO);
         waitedTime += 5;
         sleep(5);
@@ -240,8 +276,9 @@ int main(int argc, char **argv)
     DiscordState state{};
 
     discord::Core *core{};
-    auto result = discord::Core::Create(934099338374824007, DiscordCreateFlags_Default, &core); // change with your own app's id if you made one
+    auto result = discord::Core::Create(934099338374824007, DiscordCreateFlags_Default, &core); // Change with your own app's ID if you made one
     state.core.reset(core);
+
     if (!state.core)
     {
         std::cout << "Failed to instantiate discord core! (err " << static_cast<int>(result) << ")\n";
@@ -251,13 +288,17 @@ int main(int argc, char **argv)
     if (config.debug)
     {
         state.core->SetLogHook(
-            discord::LogLevel::Debug, [](discord::LogLevel level, const char *message)
-            { std::cerr << "Log(" << static_cast<uint32_t>(level) << "): " << message << "\n"; });
+            discord::LogLevel::Debug,
+            [](discord::LogLevel level, const char *message)
+            {
+                std::cerr << "Log(" << static_cast<uint32_t>(level) << "): " << message << "\n";
+            }
+        );
     }
 
     pthread_create(&updateThread, 0, updateRPC, ((void *)&state));
     log("Threads started.", LogType::DEBUG);
-    log("Xorg version " + std::to_string(XProtocolVersion(disp)), LogType::DEBUG); // this is kinda dumb to do since it shouldn't be anything else other than 11, but whatever
+    log("Xorg version " + std::to_string(XProtocolVersion(disp)), LogType::DEBUG); // This is kinda dumb to do since it shouldn't be anything else other than 11, but whatever
     log("Connected to Discord.", LogType::INFO);
 
     signal(SIGINT, [](int)
@@ -266,7 +307,6 @@ int main(int argc, char **argv)
     do
     {
         state.core->RunCallbacks();
-
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     } while (!interrupted);
 

@@ -1,7 +1,7 @@
 CC=/usr/bin/g++
 
 CPPFILES=$(wildcard src/*.cpp)
-HPPFILES=$(wildcard src/*.hpp)
+HPPFILES=$(wildcard src/header/*.hpp)
 LIBFILES=$(wildcard src/discord/*.cpp)
 CFLAGS=-Llib/ -l:discord_game_sdk.so -lpthread -lX11
 

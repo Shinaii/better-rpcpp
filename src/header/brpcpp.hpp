@@ -6,9 +6,13 @@
 #include <regex>
 #include <fstream>
 #include <filesystem>
+#include <cstdlib>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 
 // Discord RPC
-#include "discord/discord.h"
+#include "../discord/discord.h"
 
 // X11 libs
 #include <X11/Xlib.h>
@@ -17,6 +21,8 @@
 
 // variables
 #define VERSION "2.2.1"
+
+//local includes
 
 namespace
 {
@@ -32,24 +38,55 @@ string distro;
 static int trapped_error_code = 0;
 string wm;
 
-vector<string> apps = {"blender", "chrome", "chromium", "discord", "dolphin", "firefox", "gimp", "hl2_linux", "hoi4", "konsole", "lutris", "st", "steam", "surf", "vscode", "worldbox", "xterm"}; // currently supported app icons on discord rpc (replace if you made your own discord application)
-map<string, string> aliases = {
-    {"vscodium", "vscode"}, {"code", "vscode"}, {"code - [a-z]+", "vscode"}, {"stardew valley", "stardewvalley"}, {"minecraft [a-z0-9.]+", "minecraft"}, {"lunar client [a-z0-9\\(\\)\\.\\-\\/]+", "minecraft"}, {"telegram(desktop)?", "telegram"}, {"terraria\\.bin\\.x86_64", "terraria"}, {"u?xterm", "xterm"}, {"vivaldi(-stable)?", "vivaldi"}}; // for apps with different names
-map<string, string> distros_lsb = {{"Arch|Artix", "archlinux"}, {"LinuxMint", "lmint"}, {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"}, {"ManjaroLinux", "manjaro"}};                                                                                                                                                                                      // distro names in /etc/lsb_release
-map<string, string> distros_os = {{"Arch Linux", "archlinux"}, {"Linux Mint", "lmint"}, {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"}, {"Manjaro Linux", "manjaro"}};                                                                                                                                                                                     // same but in /etc/os-release (fallback)
-string helpMsg = string(
-                     "Usage:\n") +
-                 " brpc [options]\n\n" +
-                 "Options:\n" +
-                 " -k, --kill             kill the currently running instance\n" +
-                 " -f, --ignore-discord   don't check for discord on start\n" +
-                 " --debug                print debug messages\n" +
-                 " --usage-sleep=5000     sleep time in milliseconds between updating cpu and ram usages\n" +
-                 " --update-sleep=100     sleep time in milliseconds between updating the rich presence and focused application\n" +
-                 " --no-small-image       disable small image in the rich presence (focused application)\n\n" +
-                 " -h, --help             display this help and exit\n" +
-                 " -v, --version          output version number and exit";
+vector<string> apps = {
+    "blender", "chrome", "chromium", "discord", "dolphin",
+    "firefox", "gimp", "hl2_linux", "hoi4", "konsole",
+    "lutris", "st", "steam", "surf", "vscode",
+    "worldbox", "xterm"
+};
 
+map<string, string> aliases = {
+    {"vscodium", "vscode"}, {"code", "vscode"}, {"code - [a-z]+", "vscode"},
+    {"stardew valley", "stardewvalley"}, {"minecraft [a-z0-9.]+", "minecraft"},
+    {"lunar client [a-z0-9\\(\\)\\.\\-\\/]+", "minecraft"},
+    {"telegram(desktop)?", "telegram"}, {"terraria\\.bin\\.x86_64", "terraria"},
+    {"u?xterm", "xterm"}, {"vivaldi(-stable)?", "vivaldi"}
+};
+
+map<string, string> distros_lsb = {
+    {"Arch|Artix", "archlinux"}, {"LinuxMint", "lmint"},
+    {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"},
+    {"ManjaroLinux", "manjaro"}
+};
+
+map<string, string> distros_os = {
+    {"Arch Linux", "archlinux"}, {"Linux Mint", "lmint"},
+    {"Gentoo", "gentoo"}, {"Ubuntu", "ubuntu"},
+    {"Manjaro Linux", "manjaro"}
+};
+
+string helpMsg = 
+    "========================================\n"
+    "           Better-RPC++ Help Menu       \n"
+    "========================================\n"
+    "\n"
+    "Usage:\n"
+    "  brpc [options]\n"
+    "\n"
+    "Options:\n"
+    "  -k, --kill             Kill the currently running instance.\n"
+    "  -f, --ignore-discord   Don't check for Discord on start.\n"
+    "  --debug                Print debug messages.\n"
+    "  --usage-sleep=5000     Sleep time in milliseconds between updating CPU and RAM usages.\n"
+    "  --update-sleep=100     Sleep time in milliseconds between updating the rich presence and focused application.\n"
+    "  --no-small-image       Disable small image in the rich presence (focused application).\n"
+    "\n"
+    "  -h, --help             Display this help menu and exit.\n"
+    "  -v, --version          Output version number and exit.\n"
+    "\n"
+    "========================================\n"
+    "       Better-RPC++ Version " + std::string(VERSION) + "       \n"
+    "========================================\n";
 // regular expressions
 
 regex memavailr("MemAvailable: +(\\d+) kB");
@@ -178,8 +215,105 @@ void setActivity(DiscordState &state, string details, string sstate, string smal
                                                  { if(config.debug) log(string((result == discord::Result::Ok) ? "Succeeded" : "Failed")  + " updating activity!", LogType::DEBUG); });
 }
 
+string getHyprlandSocketPath()
+{
+    const char *xdgRuntimeDir = getenv("XDG_RUNTIME_DIR");
+    const char *hyprlandSignature = getenv("HYPRLAND_INSTANCE_SIGNATURE");
+
+    if (!xdgRuntimeDir || !hyprlandSignature)
+    {
+        log("Hyprland environment variables are not set. Ensure Hyprland is running.", LogType::ERROR);
+        return "";
+    }
+
+    // Construct the socket path
+    string socketPath = string(xdgRuntimeDir) + "/hypr/" + string(hyprlandSignature) + "/.socket2.sock";
+
+    // Check if the socket exists
+    if (!std::filesystem::exists(socketPath))
+    {
+        log("Hyprland IPC socket not found at: " + socketPath, LogType::ERROR);
+        return "";
+    }
+
+    return socketPath;
+}
+
 string getActiveWindowClassName(Display *disp)
 {
+    // Check if Hyprland is running
+    const char *xdgRuntimeDir = getenv("XDG_RUNTIME_DIR");
+    const char *hyprlandSignature = getenv("HYPRLAND_INSTANCE_SIGNATURE");
+
+    if (xdgRuntimeDir && hyprlandSignature)
+    {
+        // Use Hyprland-specific logic
+        string socketPath = string(xdgRuntimeDir) + "/hypr/" + string(hyprlandSignature) + "/.socket2.sock";
+
+        if (std::filesystem::exists(socketPath))
+        {
+            int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+            if (sock == -1)
+            {
+                log("Failed to create socket for Hyprland IPC", LogType::ERROR);
+                return "";
+            }
+
+            struct sockaddr_un addr;
+            memset(&addr, 0, sizeof(addr));
+            addr.sun_family = AF_UNIX;
+            strncpy(addr.sun_path, socketPath.c_str(), sizeof(addr.sun_path) - 1);
+
+            if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+            {
+                log("Failed to connect to Hyprland IPC socket", LogType::ERROR);
+                close(sock);
+                return "";
+            }
+
+            // Send the "activewindow" command
+            string command = "activewindow";
+            if (send(sock, command.c_str(), command.size(), 0) == -1)
+            {
+                log("Failed to send command to Hyprland IPC socket", LogType::ERROR);
+                close(sock);
+                return "";
+            }
+
+            char buffer[8192];
+            ssize_t bytesRead = recv(sock, buffer, sizeof(buffer) - 1, 0);
+            if (bytesRead <= 0)
+            {
+                log("Failed to read response from Hyprland IPC socket", LogType::ERROR);
+                close(sock);
+                return "";
+            }
+
+            buffer[bytesRead] = '\0';
+            string response = buffer;
+            log("Hyprland IPC raw response: " + response, LogType::DEBUG);
+            close(sock);
+
+            // Parse the response to extract the active window class name
+            size_t startPos = response.find("activewindow>>");
+            if (startPos != string::npos)
+            {
+                startPos += 14;
+                size_t endPos = response.find(",", startPos);
+                if (endPos != string::npos)
+                {
+                    string windowClass = response.substr(startPos, endPos - startPos);
+                    log("Active window class: " + windowClass, LogType::DEBUG);
+                    return windowClass;
+                }
+            }
+
+            log("No active window found in Hyprland response", LogType::DEBUG);
+            return "";
+        }
+    }
+
+    // Fallback to X11 for non-Hyprland environments
     Window root = XDefaultRootWindow(disp);
 
     char prop[256];
@@ -204,7 +338,6 @@ string getActiveWindowClassName(Display *disp)
 
     return s;
 }
-
 static unsigned long long lastTotalUser, lastTotalUserLow, lastTotalSys, lastTotalIdle;
 
 void getLast()
@@ -391,6 +524,7 @@ string getDistro()
     ifstream release;
     regex distroreg;
     smatch distromatcher;
+
     if (fs::exists("/etc/lsb-release"))
     {
         distroreg = regex("DISTRIB_ID=\"?([a-zA-Z0-9 ]+)\"?");
@@ -404,8 +538,9 @@ string getDistro()
     else
     {
         log("Warning: Neither /etc/lsb-release nor /etc/os-release was found. Please install lsb_release or ask your distribution's developer to support os-release.", LogType::DEBUG);
-        return distro;
+        return "Linux";
     }
+
     while (getline(release, line))
     {
         if (regex_search(line, distromatcher, distroreg))
@@ -414,6 +549,7 @@ string getDistro()
             break;
         }
     }
+
     return distro;
 }
 
